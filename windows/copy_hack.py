@@ -2,11 +2,10 @@
 """
 copy-hack (Windows)
 
-  Ctrl+B  — type clipboard character-by-character (delayMs=0 by default)
+  Ctrl+B  — type clipboard character-by-character (delayMs=0, same as macOS)
 
-Full chord only. Bare Ctrl never triggers paste, copy, or typing.
-Never force-releases Ctrl (avoids stuck modifier / false Ctrl+V / Ctrl+C).
-Hotkeys exist only while this process runs.
+NOT paste. Full chord only. Bare Ctrl does nothing.
+Every normal start FORCE-RESETS config (ignores old --unregister / old hotkeys).
 """
 
 from __future__ import annotations
@@ -14,30 +13,37 @@ from __future__ import annotations
 import argparse
 import ctypes
 import json
+import os
 import sys
 import threading
 import time
+import traceback
 from ctypes import wintypes
 from pathlib import Path
+
+# Unbuffered stdout so Windows cmd.exe always shows logs immediately.
+os.environ.setdefault("PYTHONUNBUFFERED", "1")
+try:
+    sys.stdout.reconfigure(line_buffering=True)  # type: ignore[attr-defined]
+    sys.stderr.reconfigure(line_buffering=True)  # type: ignore[attr-defined]
+except Exception:
+    pass
 
 try:
     import keyboard
 except ImportError:
-    print("Missing dependency. Run:  pip install -r requirements.txt", file=sys.stderr)
+    print("ERROR: Missing dependency. Run:  pip install -r requirements.txt", file=sys.stderr, flush=True)
     sys.exit(1)
 
 CONFIG_DIR = Path.home() / "AppData" / "Local" / "TypewriterPaste"
 CONFIG_PATH = CONFIG_DIR / "config.json"
+LOG_PATH = CONFIG_DIR / "debug.log"
 
 DEFAULT_CONFIG = {
     "delayMs": 0,
     "cancelOnEscape": True,
-    "hotkeys": {
-        "typewriter": "ctrl+b",
-    },
-    "enabled": {
-        "typewriter": True,
-    },
+    "hotkeys": {"typewriter": "ctrl+b"},
+    "enabled": {"typewriter": True},
 }
 
 VK_RETURN = 0x0D
@@ -46,6 +52,19 @@ KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
 INPUT_KEYBOARD = 1
 ULONG_PTR = ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
+
+DEBUG = True  # always on for now — Oleksii needs to see what fails
+
+
+def log(msg: str) -> None:
+    line = f"[{time.strftime('%H:%M:%S')}] {msg}"
+    print(line, flush=True)
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        with LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass
 
 
 class KEYBDINPUT(ctypes.Structure):
@@ -85,106 +104,83 @@ class INPUT(ctypes.Structure):
     _fields_ = (("type", wintypes.DWORD), ("_input", _INPUT))
 
 
-def _send_inputs(events: list[tuple[int, int, int]]) -> None:
+def _send_inputs(events: list[tuple[int, int, int]]) -> int:
     n = len(events)
     arr = (INPUT * n)()
     for i, (vk, scan, flags) in enumerate(events):
         arr[i].type = INPUT_KEYBOARD
         arr[i].ki = KEYBDINPUT(vk, scan, flags, 0, 0)
-    ctypes.windll.user32.SendInput(n, ctypes.byref(arr), ctypes.sizeof(INPUT))
+    return int(ctypes.windll.user32.SendInput(n, ctypes.byref(arr), ctypes.sizeof(INPUT)))
 
 
 def send_vk(vk: int) -> None:
     _send_inputs([(vk, 0, 0), (vk, 0, KEYEVENTF_KEYUP)])
 
 
-def send_unicode_char(ch: str) -> None:
-    """Type one character via KEYEVENTF_UNICODE — never uses Ctrl."""
+def send_unicode_char(ch: str) -> bool:
     code = ord(ch)
     if code > 0xFFFF:
         high = 0xD800 + ((code - 0x10000) >> 10)
         low = 0xDC00 + ((code - 0x10000) & 0x3FF)
+        ok = True
         for part in (high, low):
-            _send_inputs(
+            sent = _send_inputs(
                 [
                     (0, part, KEYEVENTF_UNICODE),
                     (0, part, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
                 ]
             )
-        return
-    _send_inputs(
+            ok = ok and sent == 2
+        return ok
+    sent = _send_inputs(
         [
             (0, code, KEYEVENTF_UNICODE),
             (0, code, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
         ]
     )
+    return sent == 2
 
 
 def chord_keys(hotkey: str) -> list[str]:
     return [p.strip().lower() for p in hotkey.split("+") if p.strip()]
 
 
-def wait_keys_up(keys: list[str], timeout: float = 1.5) -> bool:
-    """Wait until chord keys are up. Never force-releases modifiers."""
+def wait_keys_up(keys: list[str], timeout: float = 2.0) -> bool:
     if not keys:
         return True
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
             if not any(keyboard.is_pressed(k) for k in keys):
-                time.sleep(0.015)
+                time.sleep(0.02)
                 if not any(keyboard.is_pressed(k) for k in keys):
                     return True
-        except Exception:
+        except Exception as exc:
+            log(f"DEBUG wait_keys_up probe error (continuing): {exc}")
             time.sleep(0.03)
             return True
         time.sleep(0.01)
     return False
 
 
-def load_config(cli_delay_ms: int | None = None) -> dict:
+def is_admin() -> bool:
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def force_reset_config(cli_delay_ms: int | None = None) -> dict:
+    """Overwrite config every start — ignore old unregister / old hotkeys."""
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))
-    if CONFIG_PATH.exists():
-        try:
-            on_disk = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-            if isinstance(on_disk, dict):
-                for key, value in on_disk.items():
-                    if key in ("hotkeys", "enabled") and isinstance(value, dict):
-                        cfg[key].update(value)
-                    else:
-                        cfg[key] = value
-        except (OSError, json.JSONDecodeError) as exc:
-            print(f"copy-hack: could not read {CONFIG_PATH}: {exc}", file=sys.stderr)
-    if cli_delay_ms is not None:
-        cfg["delayMs"] = cli_delay_ms
-    hotkeys = cfg.setdefault("hotkeys", {})
-    enabled = cfg.setdefault("enabled", {})
-    # Always use Ctrl+B typewriter; migrate legacy ctrl+k / ctrl+l configs.
-    if hotkeys.get("typewriter") in (None, "", "ctrl+k", "ctrl+l"):
-        hotkeys["typewriter"] = "ctrl+b"
-    hotkeys.setdefault("typewriter", "ctrl+b")
-    # Starting the app re-enables typing (unregister only disables until next run).
-    enabled["typewriter"] = True
-    # Paste hotkey is not used; strip legacy enabled.paste if present for clarity.
-    enabled.pop("paste", None)
-    hotkeys.pop("paste", None)
-    return cfg
-
-
-def save_config(cfg: dict) -> None:
+    cfg["delayMs"] = 0 if cli_delay_ms is None else int(cli_delay_ms)
+    cfg["hotkeys"] = {"typewriter": "ctrl+b"}
+    cfg["enabled"] = {"typewriter": True}
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    # Persist only the supported keys.
-    out = {
-        "delayMs": int(cfg.get("delayMs", 0)),
-        "cancelOnEscape": bool(cfg.get("cancelOnEscape", True)),
-        "hotkeys": {
-            "typewriter": cfg.get("hotkeys", {}).get("typewriter", "ctrl+b"),
-        },
-        "enabled": {
-            "typewriter": bool(cfg.get("enabled", {}).get("typewriter", True)),
-        },
-    }
-    CONFIG_PATH.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
+    CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    log(f"CONFIG RESET → {CONFIG_PATH}")
+    log(f"CONFIG BODY  → {json.dumps(cfg)}")
+    return cfg
 
 
 def clipboard_text() -> str:
@@ -192,13 +188,16 @@ def clipboard_text() -> str:
     kernel32 = ctypes.windll.kernel32
     CF_UNICODETEXT = 13
     if not user32.OpenClipboard(None):
+        log("DEBUG clipboard: OpenClipboard failed")
         return ""
     try:
         handle = user32.GetClipboardData(CF_UNICODETEXT)
         if not handle:
+            log("DEBUG clipboard: empty / not text")
             return ""
         ptr = kernel32.GlobalLock(handle)
         if not ptr:
+            log("DEBUG clipboard: GlobalLock failed")
             return ""
         try:
             return ctypes.wstring_at(ptr)
@@ -212,167 +211,183 @@ class InsertEngine:
     def __init__(self, config: dict) -> None:
         self.delay_ms = int(config.get("delayMs", 0))
         self.cancel_on_escape = bool(config.get("cancelOnEscape", True))
-        self.type_hotkey = config.get("hotkeys", {}).get("typewriter", "ctrl+b")
+        self.type_hotkey = "ctrl+b"
         self._lock = threading.Lock()
         self._busy = False
-        self._cancel = False
+        self._fire_count = 0
 
-    def trigger_typewriter(self) -> None:
+    def on_hotkey(self) -> None:
+        self._fire_count += 1
+        log(f"HOTKEY FIRED #{self._fire_count} ({self.type_hotkey}) — starting typewriter thread")
         threading.Thread(target=self._typewriter, daemon=True).start()
 
-    def _begin(self) -> bool:
+    def _typewriter(self) -> None:
         with self._lock:
             if self._busy:
-                return False
+                log("DEBUG skip: already typing")
+                return
             self._busy = True
-            self._cancel = False
-            return True
-
-    def _end(self) -> None:
-        with self._lock:
-            self._busy = False
-            self._cancel = False
-
-    def _typewriter(self) -> None:
-        if not self._begin():
-            return
         try:
             text = clipboard_text()
+            preview = text[:60].replace("\n", "\\n") if text else ""
+            log(f"DEBUG clipboard length={len(text)} preview={preview!r}")
             if not text:
+                log("FAIL: clipboard empty — copy text first (Ctrl+C), then Ctrl+B")
+                try:
+                    ctypes.windll.user32.MessageBeep(0x00000030)
+                except Exception:
+                    pass
                 return
-            # Fired on chord release. Wait until Ctrl+B are fully up.
-            # Do NOT keyboard.release("ctrl") — that breaks bare Ctrl / can fake Ctrl+V.
+
             keys = chord_keys(self.type_hotkey)
-            if not wait_keys_up(keys, timeout=0.8):
+            log(f"DEBUG waiting for keys up: {keys}")
+            if not wait_keys_up(keys, timeout=2.0):
+                log("FAIL: Ctrl/B still held after timeout — release keys and retry")
                 return
+            log(f"DEBUG typing {len(text)} chars, delayMs={self.delay_ms}")
+
+            typed = 0
+            send_fail = 0
             for ch in text:
-                if self._cancel:
-                    break
                 if self.cancel_on_escape:
                     try:
                         if keyboard.is_pressed("esc"):
+                            log("DEBUG cancelled by Escape")
                             break
                     except Exception:
                         pass
+                ok = True
                 if ch in ("\n", "\r"):
                     send_vk(VK_RETURN)
                 elif ch == "\t":
                     send_vk(VK_TAB)
                 else:
-                    send_unicode_char(ch)
-                # delayMs=0 → no sleep between characters.
+                    ok = send_unicode_char(ch)
+                    if not ok:
+                        # Fallback: keyboard.write (still not Ctrl+V paste)
+                        try:
+                            keyboard.write(ch, delay=0, restore_state_after=False)
+                            ok = True
+                        except Exception as exc:
+                            send_fail += 1
+                            if send_fail <= 3:
+                                log(f"DEBUG SendInput/write failed for {ch!r}: {exc}")
+                if ok:
+                    typed += 1
                 if self.delay_ms > 0:
                     time.sleep(self.delay_ms / 1000.0)
+            log(f"DONE typed={typed}/{len(text)} send_fail={send_fail}")
+        except Exception:
+            log("ERROR in typewriter:\n" + traceback.format_exc())
         finally:
-            self._end()
-
-
-def list_hotkeys(cfg: dict) -> None:
-    hotkeys = cfg.get("hotkeys", {})
-    enabled = cfg.get("enabled", {})
-    print("Configured hotkeys (full chords only — bare Ctrl does nothing):")
-    print(
-        f"  typewriter: {hotkeys.get('typewriter', 'ctrl+b')}  "
-        f"({'on' if enabled.get('typewriter', True) else 'OFF'})"
-    )
-    print(f"  config:     {CONFIG_PATH}")
-    print()
-    print("Hotkeys are active only while copy_hack.py is running.")
-    print("Closing the process (Ctrl+C or --unregister) removes them.")
-
-
-def remove_hotkeys(cfg: dict) -> dict:
-    cfg.setdefault("enabled", {})
-    cfg["enabled"]["typewriter"] = False
-    save_config(cfg)
-    try:
-        keyboard.unhook_all_hotkeys()
-    except Exception:
-        pass
-    try:
-        keyboard.unhook_all()
-    except Exception:
-        pass
-    print("Hotkeys disabled in config:")
-    print(f"  {CONFIG_PATH}")
-    print('  "enabled": { "typewriter": false }')
-    print()
-    print("Also: stop any running copy_hack.py (Ctrl+C in its window).")
-    print("There is no OS-level install — closing the process removes the shortcuts.")
-    return cfg
+            with self._lock:
+                self._busy = False
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="copy-hack — Ctrl+B types clipboard very fast (not paste)."
     )
-    p.add_argument(
-        "--delay-ms",
-        type=int,
-        default=None,
-        help="Delay between characters in ms (default: 0 = no sleep).",
-    )
-    p.add_argument(
-        "--list-hotkeys",
-        action="store_true",
-        help="Print configured hotkeys and exit.",
-    )
+    p.add_argument("--delay-ms", type=int, default=None, help="Delay ms (default 0).")
+    p.add_argument("--list-hotkeys", action="store_true", help="Show hotkey + config and exit.")
     p.add_argument(
         "--unregister",
         "--remove-hotkeys",
         "--uninstall",
         dest="unregister",
         action="store_true",
-        help="Disable hotkeys in config, unhook this process, print how to stop.",
+        help="Stop tip: Ctrl+C the running window. Also writes enabled=false.",
+    )
+    p.add_argument(
+        "--reset",
+        action="store_true",
+        help="Force-reset config to Ctrl+B / delayMs=0 / enabled and exit.",
+    )
+    p.add_argument(
+        "--self-test",
+        action="store_true",
+        help="Print diagnostics (admin, clipboard, config) and exit.",
     )
     return p.parse_args()
 
 
+def print_diagnostics(cfg: dict) -> None:
+    log("=== DIAGNOSTICS ===")
+    log(f"python:     {sys.version.split()[0]} {sys.executable}")
+    log(f"admin:      {is_admin()}")
+    log(f"platform:   {sys.platform}")
+    log(f"config:     {CONFIG_PATH}")
+    log(f"debug log:  {LOG_PATH}")
+    log(f"delayMs:    {cfg.get('delayMs')}")
+    log(f"hotkey:     {cfg.get('hotkeys', {}).get('typewriter')}")
+    log(f"enabled:    {cfg.get('enabled', {}).get('typewriter')}")
+    text = clipboard_text()
+    log(f"clipboard:  {len(text)} chars")
+    if text:
+        log(f"clip preview: {text[:80]!r}")
+    else:
+        log("clip preview: (empty) — copy something before Ctrl+B")
+    if not is_admin():
+        log("WARN: not Administrator — hotkeys often fail in some apps. Re-run cmd as Admin.")
+    log("=== END DIAGNOSTICS ===")
+
+
 def main() -> int:
+    log("copy-hack starting…")
     if sys.platform != "win32":
-        print("This script is for Windows. On macOS use ../macos/", file=sys.stderr)
+        log("ERROR: Windows only. On macOS use ../macos/")
         return 1
 
     args = parse_args()
-    cfg = load_config(args.delay_ms)
 
-    if args.list_hotkeys:
-        list_hotkeys(cfg)
+    # Always force-reset defaults (wipes old unregister / ctrl+l / paste junk).
+    cfg = force_reset_config(args.delay_ms)
+
+    if args.reset:
+        log("OK: config reset. Run: python copy_hack.py")
+        return 0
+
+    if args.list_hotkeys or args.self_test:
+        print_diagnostics(cfg)
         return 0
 
     if args.unregister:
-        remove_hotkeys(cfg)
+        cfg["enabled"]["typewriter"] = False
+        CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+        try:
+            keyboard.unhook_all_hotkeys()
+            keyboard.unhook_all()
+        except Exception:
+            pass
+        log("Hotkeys disabled in config for this moment.")
+        log("IMPORTANT: next `python copy_hack.py` will RESET and re-enable automatically.")
+        log("To stop a running instance: press Ctrl+C in THAT window.")
         return 0
 
-    save_config(cfg)
-
-    enabled = cfg.get("enabled", {})
-    type_hk = cfg.get("hotkeys", {}).get("typewriter", "ctrl+b")
-
-    if not enabled.get("typewriter", True):
-        print("Typewriter hotkey is disabled in config.", file=sys.stderr)
-        print(f'Edit {CONFIG_PATH}: set "enabled": {{ "typewriter": true }}', file=sys.stderr)
-        return 1
+    print_diagnostics(cfg)
 
     engine = InsertEngine(cfg)
+    type_hk = "ctrl+b"
 
-    # Full chord only. Fire on release so modifiers are already up.
-    # Never call keyboard.release("ctrl"). No Ctrl+V / Ctrl+C simulation at all.
-    keyboard.add_hotkey(
-        type_hk,
-        engine.trigger_typewriter,
-        suppress=True,
-        trigger_on_release=True,
-    )
+    try:
+        # Fire on PRESS (release-trigger is unreliable on some Windows builds).
+        # Then we wait until Ctrl+B are up before typing — never fake Ctrl+V.
+        keyboard.add_hotkey(
+            type_hk,
+            engine.on_hotkey,
+            suppress=True,
+            trigger_on_release=False,
+        )
+        log(f"HOTKEY REGISTERED: {type_hk} (suppress=True, on press)")
+    except Exception:
+        log("ERROR registering hotkey:\n" + traceback.format_exc())
+        log("FIX: run this Command Prompt as Administrator, then retry.")
+        return 1
 
-    print("copy-hack running.")
-    print(f"  delayMs:     {cfg['delayMs']} (0 = instant typing, no sleeps)")
-    print(f"  config:      {CONFIG_PATH}")
-    print(f"  typewriter:  {type_hk}  (types clipboard; full chord only)")
-    print("  quit:        Ctrl+C in this window")
-    print("  remove:      python copy_hack.py --unregister")
-    print()
-    print("Bare Ctrl does nothing. Tip: run as Administrator if hotkeys miss in some apps.")
+    log("READY — copy text, click a text field, press Ctrl+B")
+    log("You MUST see 'HOTKEY FIRED' here when Ctrl+B works.")
+    log("If nothing appears on Ctrl+B → hook blocked (Admin / other app / wrong window).")
+    log("quit: Ctrl+C   |   log file: " + str(LOG_PATH))
 
     try:
         keyboard.wait()
@@ -381,7 +396,7 @@ def main() -> int:
             keyboard.unhook_all_hotkeys()
         except Exception:
             pass
-        print("\nBye. Hotkeys cleared for this process.")
+        log("Bye. Hotkeys cleared for this process.")
     return 0
 
 

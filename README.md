@@ -6,26 +6,22 @@ Copy text, then use a hotkey to **type** it (not paste).
 
 | Hotkey | Action |
 |--------|--------|
-| **Ctrl+B** | Type clipboard very fast (`delayMs: 0`) |
+| **Ctrl+B** | Type clipboard very fast (`delayMs: 0`, like macOS) |
 
-Full chord only — **Ctrl alone does nothing**.
-
-```powershell
+```bat
 cd windows
 pip install -r requirements.txt
 python copy_hack.py
 ```
 
-**Remove shortcut:**
+Console must show `READY`. Then copy → click field → **Ctrl+B**.  
+You should see `HOTKEY FIRED` in that window.
 
-```powershell
-python copy_hack.py --unregister
-```
+**Debug:** `python copy_hack.py --self-test`  
+**Log:** `%LOCALAPPDATA%\TypewriterPaste\debug.log`  
+**Stop:** Ctrl+C in the script window, or `python copy_hack.py --unregister`
 
-Hotkeys exist only while the script runs — **Ctrl+C** also removes them.  
-`--list-hotkeys` shows bindings. Config: `%LOCALAPPDATA%\TypewriterPaste\config.json`.
-
-If the hotkey fails in some apps, run PowerShell as Administrator.
+Every start resets config (ignores old commands / disabled flags). Run as Administrator if the hotkey never fires.
 
 ---
 
@@ -39,8 +35,6 @@ If the hotkey fails in some apps, run PowerShell as Administrator.
 cd macos && bash build.sh
 open TypewriterPaste.app
 ```
-
-Grant **Accessibility**, then copy → **⌘K**. Quit: menu bar **⌨ → Quit**.
 
 ---
 
