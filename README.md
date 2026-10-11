@@ -1,51 +1,56 @@
 # copy-hack
 
-Copy text, then press the hotkey — it **types** the clipboard character-by-character as fast as possible (not paste / not Ctrl+V / ⌘V).
+Copy text, then use a hotkey.
 
-| OS | Hotkey | Default |
-|----|--------|---------|
-| macOS | **⌘K** | Typewriter, `delayMs: 0` |
-| Windows | **Ctrl+K** | Typewriter, `delayMs: 0` |
+## Windows (priority)
 
-Paste mode (real Ctrl+V / ⌘V) is optional and non-default.
+| Hotkey | Action |
+|--------|--------|
+| **Ctrl+K** | Type clipboard very fast (`delayMs: 0`, not paste) |
+| **Ctrl+L** | Instant paste (simulates Ctrl+V) |
+
+```powershell
+cd windows
+pip install -r requirements.txt
+python copy_hack.py
+```
+
+**Remove shortcuts:**
+
+```powershell
+python copy_hack.py --unregister
+```
+
+Hotkeys exist only while the script runs — **Ctrl+C** in that window also removes them.  
+`--unregister` / `--remove-hotkeys` disables them in config too.
+
+```powershell
+python copy_hack.py --list-hotkeys
+```
+
+Config: `%LOCALAPPDATA%\TypewriterPaste\config.json` (see `windows/config.example.json`).
+
+If a hotkey fails in some apps, run PowerShell as Administrator.
 
 ---
 
 ## macOS
 
-1. `cd macos && bash build.sh`
-2. `open TypewriterPaste.app`
-3. **System Settings → Privacy & Security → Accessibility** → enable **TypewriterPaste**
-4. Copy (⌘C) → focus a field → **⌘K**
+| Hotkey | Action |
+|--------|--------|
+| **⌘K** | Type clipboard very fast (`delayMs: 0`) |
+| Menu | Optional instant paste (⌘V) |
 
-Quit: menu bar **⌨ → Quit**
-
-Optional paste mode: menu bar **⌨ → Instant paste (⌘V)**
-
----
-
-## Windows
-
-1. Install [Python 3](https://www.python.org/downloads/) (check “Add to PATH”)
-2. Open PowerShell in `windows/`:
-   ```powershell
-   pip install -r requirements.txt
-   python copy_hack.py
-   ```
-3. If the hotkey fails in some apps, **Run PowerShell as Administrator** and start again
-4. Copy (Ctrl+C) → focus a field → **Ctrl+K**
-
-Quit: **Ctrl+C** in the PowerShell window
-
-Optional paste mode:
-```powershell
-python copy_hack.py --mode paste
+```bash
+cd macos && bash build.sh
+open TypewriterPaste.app
 ```
-Or set `"mode": "paste"` in `%LOCALAPPDATA%\TypewriterPaste\config.json`
+
+Grant **Accessibility**, then copy → **⌘K**. Quit: menu bar **⌨ → Quit**.
 
 ---
 
 ## Layout
 
-- `macos/` — Swift menu-bar app (source of truth for Mac behavior)
-- `windows/` — Python background script
+- `windows/` — Python: Ctrl+K type, Ctrl+L paste
+- `macos/` — Swift menu-bar app

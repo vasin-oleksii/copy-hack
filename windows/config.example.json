@@ -1,5 +1,12 @@
 {
-  "mode": "typewriter",
   "delayMs": 0,
-  "cancelOnEscape": true
+  "cancelOnEscape": true,
+  "hotkeys": {
+    "typewriter": "ctrl+k",
+    "paste": "ctrl+l"
+  },
+  "enabled": {
+    "typewriter": true,
+    "paste": true
+  }
 }
