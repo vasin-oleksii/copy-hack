@@ -1,13 +1,13 @@
 # copy-hack
 
-Copy text, then insert it with a hotkey.
+Copy text, then press the hotkey — it **types** the clipboard character-by-character as fast as possible (not paste / not Ctrl+V / ⌘V).
 
-| OS | Hotkey | Default action |
-|----|--------|----------------|
-| macOS | **⌘K** | Instant paste (⌘V) |
-| Windows | **Ctrl+K** | Instant paste (Ctrl+V) |
+| OS | Hotkey | Default |
+|----|--------|---------|
+| macOS | **⌘K** | Typewriter, `delayMs: 0` |
+| Windows | **Ctrl+K** | Typewriter, `delayMs: 0` |
 
-Optional typewriter (character-by-character) mode on both platforms.
+Paste mode (real Ctrl+V / ⌘V) is optional and non-default.
 
 ---
 
@@ -20,7 +20,7 @@ Optional typewriter (character-by-character) mode on both platforms.
 
 Quit: menu bar **⌨ → Quit**
 
-Typewriter mode: menu bar **⌨ → Typewriter**
+Optional paste mode: menu bar **⌨ → Instant paste (⌘V)**
 
 ---
 
@@ -37,11 +37,11 @@ Typewriter mode: menu bar **⌨ → Typewriter**
 
 Quit: **Ctrl+C** in the PowerShell window
 
-Typewriter mode:
+Optional paste mode:
 ```powershell
-python copy_hack.py --mode typewriter
+python copy_hack.py --mode paste
 ```
-Or set `"mode": "typewriter"` in `%LOCALAPPDATA%\TypewriterPaste\config.json`
+Or set `"mode": "paste"` in `%LOCALAPPDATA%\TypewriterPaste\config.json`
 
 ---
 

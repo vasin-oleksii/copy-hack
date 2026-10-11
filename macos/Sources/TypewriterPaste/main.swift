@@ -6,10 +6,10 @@ import Foundation
 // MARK: - Config
 
 enum InsertMode: String, Codable {
-    /// Simulate ⌘V — instant bulk paste of clipboard contents.
-    case paste
-    /// Character-by-character CGEvent typing (for fields that block paste).
+    /// Character-by-character CGEvent typing (default — not ⌘V).
     case typewriter
+    /// Optional: simulate ⌘V — bulk paste of clipboard contents.
+    case paste
 }
 
 struct Config: Codable {
@@ -17,10 +17,10 @@ struct Config: Codable {
     var delayMs: UInt32
     /// Escape stops an in-progress typewriter typeout.
     var cancelOnEscape: Bool
-    /// Default: instant paste via simulated ⌘V.
+    /// Default: typewriter (character-by-character), delayMs 0.
     var mode: InsertMode
 
-    static let `default` = Config(delayMs: 0, cancelOnEscape: true, mode: .paste)
+    static let `default` = Config(delayMs: 0, cancelOnEscape: true, mode: .typewriter)
 
     enum CodingKeys: String, CodingKey {
         case delayMs, cancelOnEscape, mode
@@ -105,24 +105,24 @@ struct CLI {
     }
 
     static let helpText = """
-    TypewriterPaste — Command+K inserts clipboard (default: instant paste).
+    TypewriterPaste — Command+K types clipboard character-by-character (not ⌘V).
 
     Usage:
       TypewriterPaste [--delay-ms N]
 
     Options:
-      --delay-ms N   Typewriter-mode delay between characters (default: 0)
+      --delay-ms N   Delay between characters in ms (default: 0 = no sleep)
       -h, --help     Show this help
 
     Config file:
       ~/Library/Application Support/TypewriterPaste/config.json
 
     Example:
-      { "mode": "paste", "delayMs": 0, "cancelOnEscape": true }
+      { "mode": "typewriter", "delayMs": 0, "cancelOnEscape": true }
 
     Modes (menu bar or config "mode"):
-      paste       Instant ⌘V paste (default)
-      typewriter  Character-by-character typing
+      typewriter  Character-by-character typing (default, delayMs 0)
+      paste       Optional instant ⌘V paste
 
     Requires Accessibility permission (see README).
     """
@@ -152,13 +152,13 @@ final class InsertEngine {
         lock.unlock()
     }
 
-    /// Hotkey entry: paste or type depending on mode.
+    /// Hotkey entry: type (default) or paste depending on mode.
     func handleHotKey() {
         switch mode {
-        case .paste:
-            pasteClipboard()
         case .typewriter:
             typeClipboard()
+        case .paste:
+            pasteClipboard()
         }
     }
 
@@ -401,7 +401,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
             button.title = "⌨"
-            button.toolTip = "TypewriterPaste — Command+K inserts clipboard"
+            button.toolTip = "TypewriterPaste — Command+K types clipboard"
         }
         item.menu = buildMenu()
         statusItem = item
@@ -412,24 +412,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let statusTitle: String
         switch config.mode {
-        case .paste:
-            statusTitle = "Command+K: Instant paste (⌘V)"
         case .typewriter:
             statusTitle = "Command+K: Typewriter (\(config.delayMs) ms/char)"
+        case .paste:
+            statusTitle = "Command+K: Instant paste (⌘V)"
         }
         let status = NSMenuItem(title: statusTitle, action: nil, keyEquivalent: "")
         status.isEnabled = false
         menu.addItem(status)
         menu.addItem(.separator())
-
-        let pasteMode = NSMenuItem(
-            title: "Instant paste (⌘V)",
-            action: #selector(setPasteMode),
-            keyEquivalent: ""
-        )
-        pasteMode.target = self
-        pasteMode.state = config.mode == .paste ? .on : .off
-        menu.addItem(pasteMode)
 
         let typeMode = NSMenuItem(
             title: "Typewriter (character-by-character)",
@@ -439,6 +430,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         typeMode.target = self
         typeMode.state = config.mode == .typewriter ? .on : .off
         menu.addItem(typeMode)
+
+        let pasteMode = NSMenuItem(
+            title: "Instant paste (⌘V) — optional",
+            action: #selector(setPasteMode),
+            keyEquivalent: ""
+        )
+        pasteMode.target = self
+        pasteMode.state = config.mode == .paste ? .on : .off
+        menu.addItem(pasteMode)
 
         menu.addItem(.separator())
 

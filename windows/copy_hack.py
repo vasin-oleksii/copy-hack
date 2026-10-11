@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-copy-hack (Windows) — Ctrl+K inserts clipboard.
+copy-hack (Windows) — Ctrl+K types clipboard character-by-character.
 
-Default: instant paste (Ctrl+V).
-Optional: typewriter character-by-character mode.
+Default: typewriter (not Ctrl+V paste), delayMs=0 (no sleeps between chars).
+Optional: paste mode (Ctrl+V) via --mode paste or config.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ except ImportError:
 CONFIG_DIR = Path.home() / "AppData" / "Local" / "TypewriterPaste"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 DEFAULT_CONFIG = {
-    "mode": "paste",  # "paste" | "typewriter"
+    "mode": "typewriter",  # "typewriter" | "paste"
     "delayMs": 0,
     "cancelOnEscape": True,
 }
@@ -40,7 +40,7 @@ def load_config(cli_delay_ms: int | None) -> dict:
     if cli_delay_ms is not None:
         cfg["delayMs"] = cli_delay_ms
     if cfg.get("mode") not in ("paste", "typewriter"):
-        cfg["mode"] = "paste"
+        cfg["mode"] = "typewriter"
     return cfg
 
 
@@ -85,13 +85,13 @@ class InsertEngine:
         self._cancel = False
 
     def handle_hotkey(self) -> None:
-        if self.mode == "typewriter":
-            threading.Thread(target=self._typewriter, daemon=True).start()
-        else:
+        if self.mode == "paste":
             threading.Thread(target=self._paste, daemon=True).start()
+        else:
+            threading.Thread(target=self._typewriter, daemon=True).start()
 
     def _paste(self) -> None:
-        # Let Ctrl+K finish, then send Ctrl+V.
+        # Optional non-default mode: let Ctrl+K finish, then send Ctrl+V.
         time.sleep(0.08)
         keyboard.release("ctrl")
         keyboard.release("k")
@@ -108,6 +108,7 @@ class InsertEngine:
             text = clipboard_text()
             if not text:
                 return
+            # Brief pause so Ctrl+K can finish before we inject keystrokes.
             time.sleep(0.12)
             keyboard.release("ctrl")
             keyboard.release("k")
@@ -122,6 +123,7 @@ class InsertEngine:
                     keyboard.send("tab")
                 else:
                     keyboard.write(ch, delay=0, restore_state_after=False)
+                # delayMs=0 → no sleep between characters (as fast as possible).
                 if self.delay_ms > 0:
                     time.sleep(self.delay_ms / 1000.0)
         finally:
@@ -132,19 +134,19 @@ class InsertEngine:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="copy-hack — Ctrl+K inserts clipboard (default: instant Ctrl+V paste)."
+        description="copy-hack — Ctrl+K types clipboard character-by-character (not Ctrl+V)."
     )
     p.add_argument(
         "--delay-ms",
         type=int,
         default=None,
-        help="Typewriter-mode delay between characters (ms).",
+        help="Delay between characters in ms (default: 0 = no sleep).",
     )
     p.add_argument(
         "--mode",
-        choices=("paste", "typewriter"),
+        choices=("typewriter", "paste"),
         default=None,
-        help="Override insert mode for this run.",
+        help="Override insert mode for this run (default: typewriter).",
     )
     return p.parse_args()
 
@@ -165,7 +167,7 @@ def main() -> int:
 
     print("copy-hack running.")
     print(f"  mode:     {cfg['mode']}")
-    print(f"  delayMs:  {cfg['delayMs']} (typewriter only)")
+    print(f"  delayMs:  {cfg['delayMs']} (0 = instant typing, no sleeps)")
     print(f"  config:   {CONFIG_PATH}")
     print("  hotkey:   Ctrl+K")
     print("  quit:     Ctrl+C in this window")
