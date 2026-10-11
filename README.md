@@ -1,27 +1,25 @@
 # copy-hack
 
-Copy text, then use a hotkey to **type** it (not paste).
+Copy text, then **type** it with a hotkey (not paste).
 
-## Windows (priority)
+## Windows
 
 | Hotkey | Action |
 |--------|--------|
-| **Ctrl+B** | Type clipboard very fast (`delayMs: 0`, like macOS) |
+| **Ctrl+B** | Type clipboard very fast (`delayMs: 0`) |
+
+**Recommended (Admin cmd):**
 
 ```bat
 cd windows
-pip install -r requirements.txt
-python copy_hack.py
+cleanup_and_run.bat
 ```
 
-Console must show `READY`. Then copy → click field → **Ctrl+B**.  
-You should see `HOTKEY FIRED` in that window.
+Or: `python -u copy_hack.py`
 
-**Debug:** `python copy_hack.py --self-test`  
-**Log:** `%LOCALAPPDATA%\TypewriterPaste\debug.log`  
-**Stop:** Ctrl+C in the script window, or `python copy_hack.py --unregister`
+You must see `BOOT:` then `READY`. Blank console with no `BOOT:` = old file — replace `copy_hack.py`.
 
-Every start resets config (ignores old commands / disabled flags). Run as Administrator if the hotkey never fires.
+Every start auto-cleans old config and other `copy_hack` processes.
 
 ---
 
@@ -32,13 +30,5 @@ Every start resets config (ignores old commands / disabled flags). Run as Admini
 | **⌘K** | Type clipboard very fast (`delayMs: 0`) |
 
 ```bash
-cd macos && bash build.sh
-open TypewriterPaste.app
+cd macos && bash build.sh && open TypewriterPaste.app
 ```
-
----
-
-## Layout
-
-- `windows/` — Python: Ctrl+B types clipboard fast
-- `macos/` — Swift menu-bar app

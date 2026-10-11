@@ -2,37 +2,37 @@
 
 | Hotkey | Action |
 |--------|--------|
-| **Ctrl+B** | Type clipboard very fast (`delayMs: 0`, same as macOS — not paste) |
+| **Ctrl+B** | Type clipboard very fast (`delayMs: 0`) — **not paste** |
+
+## Run (recommended)
+
+Double-click or from Admin cmd:
 
 ```bat
-cd windows
-pip install -r requirements.txt
-python copy_hack.py
+cleanup_and_run.bat
 ```
 
-You **must** see `READY` and diagnostics in the console. Leave that window open.
+Or:
 
-1. Copy text (Ctrl+C)
-2. Click a text field
-3. Press **Ctrl+B**
-4. Console should print `HOTKEY FIRED` then `DONE typed=…`
+```bat
+python -u copy_hack.py
+```
+
+You **must** see lines starting with `BOOT:` then `READY`.
+
+If the console stays **blank** with no `BOOT:` → you are running an **old** `copy_hack.py` (old ZIP). Replace the file.
+
+## Why Admin still showed a blank line before
+
+1. Old ZIP from GitHub (push of the debug build may not have reached the PC).
+2. Script hung inside `keyboard` hook while a previous `copy_hack.py` was still running — prints happened **after** that hang in old builds.
+3. This build prints `BOOT` **before** importing `keyboard`, then **auto-kills** other `copy_hack` processes and wipes `%LOCALAPPDATA%\TypewriterPaste`.
 
 ## Debug
 
 ```bat
-python copy_hack.py --self-test
+python -u copy_hack.py --cleanup-only
+python -u copy_hack.py --self-test
 ```
 
-Log file: `%LOCALAPPDATA%\TypewriterPaste\debug.log`
-
-Every start **force-resets** config to Ctrl+B / delayMs=0 / enabled (old `--unregister` cannot stick).
-
-Remove / stop:
-
-```bat
-python copy_hack.py --unregister
-```
-
-Or **Ctrl+C** in the running window.
-
-Run **as Administrator** if Ctrl+B does not print `HOTKEY FIRED`.
+Log: `%LOCALAPPDATA%\TypewriterPaste\debug.log`
