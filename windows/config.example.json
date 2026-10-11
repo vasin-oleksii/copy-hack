@@ -2,11 +2,9 @@
   "delayMs": 0,
   "cancelOnEscape": true,
   "hotkeys": {
-    "typewriter": "ctrl+k",
-    "paste": "ctrl+l"
+    "typewriter": "ctrl+l"
   },
   "enabled": {
-    "typewriter": true,
-    "paste": true
+    "typewriter": true
   }
 }

@@ -1,15 +1,14 @@
 # copy-hack
 
-Copy text, then use a hotkey.
+Copy text, then use a hotkey to **type** it (not paste).
 
 ## Windows (priority)
 
 | Hotkey | Action |
 |--------|--------|
-| **Ctrl+K** | Type clipboard very fast (`delayMs: 0`) |
-| **Ctrl+L** | Instant paste (Ctrl+V) |
+| **Ctrl+L** | Type clipboard very fast (`delayMs: 0`) |
 
-Full chords only — **pressing Ctrl alone does nothing**.
+Full chord only — **Ctrl alone does nothing**.
 
 ```powershell
 cd windows
@@ -17,7 +16,7 @@ pip install -r requirements.txt
 python copy_hack.py
 ```
 
-**Remove shortcuts:**
+**Remove shortcut:**
 
 ```powershell
 python copy_hack.py --unregister
@@ -26,7 +25,7 @@ python copy_hack.py --unregister
 Hotkeys exist only while the script runs — **Ctrl+C** also removes them.  
 `--list-hotkeys` shows bindings. Config: `%LOCALAPPDATA%\TypewriterPaste\config.json`.
 
-If a hotkey fails in some apps, run PowerShell as Administrator.
+If the hotkey fails in some apps, run PowerShell as Administrator.
 
 ---
 
@@ -35,7 +34,6 @@ If a hotkey fails in some apps, run PowerShell as Administrator.
 | Hotkey | Action |
 |--------|--------|
 | **⌘K** | Type clipboard very fast (`delayMs: 0`) |
-| Menu | Optional instant paste (⌘V) |
 
 ```bash
 cd macos && bash build.sh
@@ -48,5 +46,5 @@ Grant **Accessibility**, then copy → **⌘K**. Quit: menu bar **⌨ → Quit**
 
 ## Layout
 
-- `windows/` — Python: Ctrl+K type, Ctrl+L paste
+- `windows/` — Python: Ctrl+L types clipboard fast
 - `macos/` — Swift menu-bar app
