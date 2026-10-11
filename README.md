@@ -6,8 +6,10 @@ Copy text, then use a hotkey.
 
 | Hotkey | Action |
 |--------|--------|
-| **Ctrl+K** | Type clipboard very fast (`delayMs: 0`, not paste) |
-| **Ctrl+L** | Instant paste (simulates Ctrl+V) |
+| **Ctrl+K** | Type clipboard very fast (`delayMs: 0`) |
+| **Ctrl+L** | Instant paste (Ctrl+V) |
+
+Full chords only — **pressing Ctrl alone does nothing**.
 
 ```powershell
 cd windows
@@ -21,14 +23,8 @@ python copy_hack.py
 python copy_hack.py --unregister
 ```
 
-Hotkeys exist only while the script runs — **Ctrl+C** in that window also removes them.  
-`--unregister` / `--remove-hotkeys` disables them in config too.
-
-```powershell
-python copy_hack.py --list-hotkeys
-```
-
-Config: `%LOCALAPPDATA%\TypewriterPaste\config.json` (see `windows/config.example.json`).
+Hotkeys exist only while the script runs — **Ctrl+C** also removes them.  
+`--list-hotkeys` shows bindings. Config: `%LOCALAPPDATA%\TypewriterPaste\config.json`.
 
 If a hotkey fails in some apps, run PowerShell as Administrator.
 

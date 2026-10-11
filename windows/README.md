@@ -3,7 +3,9 @@
 | Hotkey | Action |
 |--------|--------|
 | **Ctrl+K** | Type clipboard fast (`delayMs: 0`) |
-| **Ctrl+L** | Paste (Ctrl+V) |
+| **Ctrl+L** | Paste (real Ctrl+V via SendInput) |
+
+Full chords only. **Bare Ctrl does nothing** (no paste, no copy, no stuck modifier).
 
 ```powershell
 pip install -r requirements.txt
@@ -18,4 +20,4 @@ python copy_hack.py --unregister
 python copy_hack.py --list-hotkeys
 ```
 
-Closing the process (Ctrl+C) clears hotkeys. There is no separate OS install.
+Closing the process (Ctrl+C) clears hotkeys. No separate OS install.
