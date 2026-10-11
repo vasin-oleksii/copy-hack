@@ -262,27 +262,123 @@ def force_reset_config(delay_ms: int = 0) -> dict:
     return cfg
 
 
-def clipboard_text(keyboard_mod) -> str:
+def _clipboard_via_win32() -> str:
+    """
+    Read CF_UNICODETEXT. Critical on 64-bit Python: GlobalLock MUST return c_void_p
+    or the pointer is truncated and looks like GlobalLock failed / empty clipboard.
+    """
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
     CF_UNICODETEXT = 13
-    if not user32.OpenClipboard(None):
-        log("DEBUG clipboard: OpenClipboard failed")
+    CF_TEXT = 1
+
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.OpenClipboard.restype = wintypes.BOOL
+    user32.CloseClipboard.argtypes = []
+    user32.CloseClipboard.restype = wintypes.BOOL
+    user32.GetClipboardData.argtypes = [wintypes.UINT]
+    user32.GetClipboardData.restype = wintypes.HANDLE
+    user32.IsClipboardFormatAvailable.argtypes = [wintypes.UINT]
+    user32.IsClipboardFormatAvailable.restype = wintypes.BOOL
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalLock.restype = ctypes.c_void_p  # 64-bit safe
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+    kernel32.GetLastError.restype = wintypes.DWORD
+
+    # Retry — another app may briefly hold the clipboard.
+    opened = False
+    for _ in range(30):
+        if user32.OpenClipboard(None):
+            opened = True
+            break
+        time.sleep(0.02)
+    if not opened:
+        err = kernel32.GetLastError()
+        log("DEBUG clipboard: OpenClipboard failed GetLastError=" + str(err))
         return ""
+
     try:
-        handle = user32.GetClipboardData(CF_UNICODETEXT)
-        if not handle:
-            log("DEBUG clipboard: empty / not text")
-            return ""
-        ptr = kernel32.GlobalLock(handle)
-        if not ptr:
-            return ""
-        try:
-            return ctypes.wstring_at(ptr)
-        finally:
-            kernel32.GlobalUnlock(handle)
+        text = ""
+        if user32.IsClipboardFormatAvailable(CF_UNICODETEXT):
+            handle = user32.GetClipboardData(CF_UNICODETEXT)
+            if handle:
+                ptr = kernel32.GlobalLock(handle)
+                if ptr:
+                    try:
+                        text = ctypes.wstring_at(ptr) or ""
+                    finally:
+                        kernel32.GlobalUnlock(handle)
+                else:
+                    log(
+                        "DEBUG clipboard: GlobalLock failed GetLastError="
+                        + str(kernel32.GetLastError())
+                        + " (will try fallbacks)"
+                    )
+        if not text and user32.IsClipboardFormatAvailable(CF_TEXT):
+            handle = user32.GetClipboardData(CF_TEXT)
+            if handle:
+                ptr = kernel32.GlobalLock(handle)
+                if ptr:
+                    try:
+                        text = ctypes.string_at(ptr).decode("mbcs", errors="replace")
+                    finally:
+                        kernel32.GlobalUnlock(handle)
+        return text
     finally:
         user32.CloseClipboard()
+
+
+def _clipboard_via_powershell() -> str:
+    try:
+        out = subprocess.check_output(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "try { Get-Clipboard -Raw } catch { '' }",
+            ],
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return out.decode("utf-8", errors="replace").replace("\r\n", "\n")
+    except Exception as exc:
+        log("DEBUG clipboard powershell fallback failed: " + str(exc))
+        return ""
+
+
+def _clipboard_via_tk() -> str:
+    try:
+        import tkinter as tk
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            return root.clipboard_get()
+        finally:
+            root.destroy()
+    except Exception as exc:
+        log("DEBUG clipboard tk fallback failed: " + str(exc))
+        return ""
+
+
+def clipboard_text(_keyboard_mod=None) -> str:
+    """Return latest clipboard text; never treat 64-bit GlobalLock truncation as empty."""
+    text = _clipboard_via_win32()
+    if text:
+        log("DEBUG clipboard source=win32 length=" + str(len(text)))
+        return text
+    text = _clipboard_via_powershell()
+    if text:
+        log("DEBUG clipboard source=powershell length=" + str(len(text)))
+        return text
+    text = _clipboard_via_tk()
+    if text:
+        log("DEBUG clipboard source=tk length=" + str(len(text)))
+        return text
+    log("DEBUG clipboard: all readers returned empty")
+    return ""
 
 
 def wait_keys_up(keyboard_mod, keys, timeout: float = 2.0) -> bool:
@@ -320,7 +416,8 @@ class InsertEngine:
             self._busy = True
         try:
             text = clipboard_text(self.kb)
-            log("DEBUG clipboard length=" + str(len(text)))
+            preview = text[:80].replace("\n", "\\n") if text else ""
+            log("DEBUG clipboard length=" + str(len(text)) + " preview=" + repr(preview))
             if not text:
                 log("FAIL: clipboard empty - copy text with Ctrl+C first, then Ctrl+B")
                 try:
