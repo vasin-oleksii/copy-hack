@@ -1,0 +1,26 @@
+# macOS / Swift
+macos/.build/
+macos/.build-app/
+macos/*.app/
+macos/.swiftpm/
+macos/Package.resolved
+**/*.dSYM/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*~
