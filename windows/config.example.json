@@ -2,7 +2,7 @@
   "delayMs": 0,
   "cancelOnEscape": true,
   "hotkeys": {
-    "typewriter": "ctrl+l"
+    "typewriter": "ctrl+b"
   },
   "enabled": {
     "typewriter": true

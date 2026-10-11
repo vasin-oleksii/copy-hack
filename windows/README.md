@@ -2,7 +2,7 @@
 
 | Hotkey | Action |
 |--------|--------|
-| **Ctrl+L** | Type clipboard very fast (`delayMs: 0`, character-by-character) |
+| **Ctrl+B** | Type clipboard very fast (`delayMs: 0`, character-by-character) |
 
 Full chord only. **Bare Ctrl does nothing** (no paste, no copy).
 

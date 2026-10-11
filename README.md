@@ -6,7 +6,7 @@ Copy text, then use a hotkey to **type** it (not paste).
 
 | Hotkey | Action |
 |--------|--------|
-| **Ctrl+L** | Type clipboard very fast (`delayMs: 0`) |
+| **Ctrl+B** | Type clipboard very fast (`delayMs: 0`) |
 
 Full chord only — **Ctrl alone does nothing**.
 
@@ -46,5 +46,5 @@ Grant **Accessibility**, then copy → **⌘K**. Quit: menu bar **⌨ → Quit**
 
 ## Layout
 
-- `windows/` — Python: Ctrl+L types clipboard fast
+- `windows/` — Python: Ctrl+B types clipboard fast
 - `macos/` — Swift menu-bar app

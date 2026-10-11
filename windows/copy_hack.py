@@ -2,7 +2,7 @@
 """
 copy-hack (Windows)
 
-  Ctrl+L  — type clipboard character-by-character (delayMs=0 by default)
+  Ctrl+B  — type clipboard character-by-character (delayMs=0 by default)
 
 Full chord only. Bare Ctrl never triggers paste, copy, or typing.
 Never force-releases Ctrl (avoids stuck modifier / false Ctrl+V / Ctrl+C).
@@ -33,7 +33,7 @@ DEFAULT_CONFIG = {
     "delayMs": 0,
     "cancelOnEscape": True,
     "hotkeys": {
-        "typewriter": "ctrl+l",
+        "typewriter": "ctrl+b",
     },
     "enabled": {
         "typewriter": True,
@@ -159,11 +159,12 @@ def load_config(cli_delay_ms: int | None = None) -> dict:
         cfg["delayMs"] = cli_delay_ms
     hotkeys = cfg.setdefault("hotkeys", {})
     enabled = cfg.setdefault("enabled", {})
-    # Migrate older configs that used ctrl+k / paste mode.
-    if hotkeys.get("typewriter") in (None, "", "ctrl+k"):
-        hotkeys["typewriter"] = "ctrl+l"
-    hotkeys.setdefault("typewriter", "ctrl+l")
-    enabled.setdefault("typewriter", True)
+    # Always use Ctrl+B typewriter; migrate legacy ctrl+k / ctrl+l configs.
+    if hotkeys.get("typewriter") in (None, "", "ctrl+k", "ctrl+l"):
+        hotkeys["typewriter"] = "ctrl+b"
+    hotkeys.setdefault("typewriter", "ctrl+b")
+    # Starting the app re-enables typing (unregister only disables until next run).
+    enabled["typewriter"] = True
     # Paste hotkey is not used; strip legacy enabled.paste if present for clarity.
     enabled.pop("paste", None)
     hotkeys.pop("paste", None)
@@ -177,7 +178,7 @@ def save_config(cfg: dict) -> None:
         "delayMs": int(cfg.get("delayMs", 0)),
         "cancelOnEscape": bool(cfg.get("cancelOnEscape", True)),
         "hotkeys": {
-            "typewriter": cfg.get("hotkeys", {}).get("typewriter", "ctrl+l"),
+            "typewriter": cfg.get("hotkeys", {}).get("typewriter", "ctrl+b"),
         },
         "enabled": {
             "typewriter": bool(cfg.get("enabled", {}).get("typewriter", True)),
@@ -211,7 +212,7 @@ class InsertEngine:
     def __init__(self, config: dict) -> None:
         self.delay_ms = int(config.get("delayMs", 0))
         self.cancel_on_escape = bool(config.get("cancelOnEscape", True))
-        self.type_hotkey = config.get("hotkeys", {}).get("typewriter", "ctrl+l")
+        self.type_hotkey = config.get("hotkeys", {}).get("typewriter", "ctrl+b")
         self._lock = threading.Lock()
         self._busy = False
         self._cancel = False
@@ -239,7 +240,7 @@ class InsertEngine:
             text = clipboard_text()
             if not text:
                 return
-            # Fired on chord release. Wait until Ctrl+L are fully up.
+            # Fired on chord release. Wait until Ctrl+B are fully up.
             # Do NOT keyboard.release("ctrl") — that breaks bare Ctrl / can fake Ctrl+V.
             keys = chord_keys(self.type_hotkey)
             if not wait_keys_up(keys, timeout=0.8):
@@ -271,7 +272,7 @@ def list_hotkeys(cfg: dict) -> None:
     enabled = cfg.get("enabled", {})
     print("Configured hotkeys (full chords only — bare Ctrl does nothing):")
     print(
-        f"  typewriter: {hotkeys.get('typewriter', 'ctrl+l')}  "
+        f"  typewriter: {hotkeys.get('typewriter', 'ctrl+b')}  "
         f"({'on' if enabled.get('typewriter', True) else 'OFF'})"
     )
     print(f"  config:     {CONFIG_PATH}")
@@ -303,7 +304,7 @@ def remove_hotkeys(cfg: dict) -> dict:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="copy-hack — Ctrl+L types clipboard very fast (not paste)."
+        description="copy-hack — Ctrl+B types clipboard very fast (not paste)."
     )
     p.add_argument(
         "--delay-ms",
@@ -346,7 +347,7 @@ def main() -> int:
     save_config(cfg)
 
     enabled = cfg.get("enabled", {})
-    type_hk = cfg.get("hotkeys", {}).get("typewriter", "ctrl+l")
+    type_hk = cfg.get("hotkeys", {}).get("typewriter", "ctrl+b")
 
     if not enabled.get("typewriter", True):
         print("Typewriter hotkey is disabled in config.", file=sys.stderr)
